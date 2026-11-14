@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.smarty.model.FridgeItem
+import com.example.smarty.model.ScannedProduct
 import com.google.firebase.firestore.FirebaseFirestore
 import java.time.LocalDate
 
@@ -36,6 +37,7 @@ fun FridgeScreen(
     var loading by remember(userId) { mutableStateOf(true) }
     var error by remember(userId) { mutableStateOf<String?>(null) }
 
+    var pendingProduct by remember { mutableStateOf<ScannedProduct?>(null) }
     var showForm by remember { mutableStateOf(false) }
     var selectedItem by remember { mutableStateOf<FridgeItem?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -95,15 +97,24 @@ fun FridgeScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        Button(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            onClick = {
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = {
+                    selectedItem = null
+                    pendingProduct = null
+                    formError = null
+                    showForm = true
+                }
+            ) { Text("+ Add item") }
+            BarcodeLookupControls { product ->
                 selectedItem = null
+                pendingProduct = product
                 formError = null
                 showForm = true
             }
-        ) {
-            Text("+ Add item")
         }
 
         error?.let { message ->
@@ -163,6 +174,7 @@ fun FridgeScreen(
                                     TextButton(
                                         enabled = item.id !in deletingIds,
                                         onClick = {
+                                            pendingProduct = null
                                             selectedItem = item
                                             formError = null
                                             showForm = true
@@ -209,9 +221,10 @@ fun FridgeScreen(
     }
 
     if (showForm) {
-        key(selectedItem?.id) {
+        key(selectedItem?.id, pendingProduct?.barcode) {
             ItemFormDialog(
                 initialItem = selectedItem,
+                prefill = pendingProduct,
                 saving = saving,
                 saveError = formError,
                 onDismiss = { showForm = false },
@@ -229,7 +242,10 @@ fun FridgeScreen(
                     }
 
                     // Copy preserves fields such as barcode and image URL.
-                    val updatedItem = (existingItem ?: FridgeItem()).copy(
+                    val updatedItem = (existingItem ?: FridgeItem(
+                        barcode = pendingProduct?.barcode.orEmpty(),
+                        imageUrl = pendingProduct?.imageUrl.orEmpty()
+                    )).copy(
                         id = document.id,
                         name = name,
                         quantity = quantity,
@@ -258,13 +274,14 @@ fun FridgeScreen(
 @Composable
 private fun ItemFormDialog(
     initialItem: FridgeItem?,
+    prefill: ScannedProduct?,
     saving: Boolean,
     saveError: String?,
     onDismiss: () -> Unit,
     onSave: (String, Double, String, String) -> Unit
 ) {
     var name by rememberSaveable {
-        mutableStateOf(initialItem?.name.orEmpty())
+        mutableStateOf(initialItem?.name ?: prefill?.name.orEmpty())
     }
 
     var quantity by rememberSaveable {
@@ -301,6 +318,16 @@ private fun ItemFormDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                val barcode = initialItem?.barcode ?: prefill?.barcode.orEmpty()
+                if (barcode.isNotBlank()) Text("Barcode: $barcode")
+                prefill?.brand?.takeIf { it.isNotBlank() }?.let { Text("Brand: $it") }
+                prefill?.packageQuantity?.takeIf { it.isNotBlank() }?.let {
+                    Text("Package label: $it (reference only)")
+                }
+                if (prefill != null) {
+                    Text("Confirm the product, then enter the amount you own and the date printed on your package.")
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
