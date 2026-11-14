@@ -37,6 +37,8 @@ android {
 }
 
 dependencies {
+    implementation("com.google.firebase:firebase-ai")
+    implementation("com.google.firebase:firebase-appcheck-debug")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
     implementation("com.google.firebase:firebase-auth")

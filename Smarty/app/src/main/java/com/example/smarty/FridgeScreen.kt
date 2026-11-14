@@ -85,6 +85,10 @@ fun FridgeScreen(
 
         Text("Use what you have. Waste less.")
         ReminderControls(userId = userId)
+        RecipeControls(
+            userId = userId,
+            inventory = fridgeItems
+        )
 
         Spacer(Modifier.height(16.dp))
 
