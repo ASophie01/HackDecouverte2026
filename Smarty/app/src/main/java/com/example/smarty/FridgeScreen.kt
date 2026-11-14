@@ -64,7 +64,6 @@ fun FridgeScreen(
             listener.remove()
         }
     }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
