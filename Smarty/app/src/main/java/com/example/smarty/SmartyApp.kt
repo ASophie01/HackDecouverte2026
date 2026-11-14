@@ -36,35 +36,16 @@ fun SmartyApp() {
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        if (user == null) {
+        val currentUser = user
+
+        if (currentUser == null) {
             AuthScreen(auth)
         } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .safeDrawingPadding()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Welcome to Smarty!",
-                    style = MaterialTheme.typography.headlineMedium
+            key(currentUser.uid) {
+                FridgeScreen(
+                    userId = currentUser.uid,
+                    onLogout = { auth.signOut() }
                 )
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(text = user?.email.orEmpty())
-
-                Spacer(Modifier.height(24.dp))
-
-                Text("Your fridge will appear here.")
-
-                Spacer(Modifier.height(24.dp))
-
-                Button(onClick = { auth.signOut() }) {
-                    Text("Log out")
-                }
             }
         }
     }
@@ -75,7 +56,6 @@ private fun AuthScreen(auth: FirebaseAuth) {
     var isRegistering by rememberSaveable { mutableStateOf(false) }
     var email by rememberSaveable { mutableStateOf("") }
 
-    // Passwords stay only in memory.
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
 
@@ -203,12 +183,12 @@ private fun AuthScreen(auth: FirebaseAuth) {
                     request.addOnCompleteListener { task ->
                         isLoading = false
 
-                        if (!task.isSuccessful) {
-                            error = task.exception?.localizedMessage
-                                ?: "Authentication failed. Try again."
-                        } else {
+                        if (task.isSuccessful) {
                             password = ""
                             confirmation = ""
+                        } else {
+                            error = task.exception?.localizedMessage
+                                ?: "Authentication failed. Try again."
                         }
                     }
                 }
