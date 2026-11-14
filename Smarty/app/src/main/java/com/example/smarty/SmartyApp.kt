@@ -44,7 +44,7 @@ fun SmartyApp() {
             AuthScreen(auth)
         } else {
             key(currentUser.uid) {
-                FridgeScreen(
+                SharedFridgeHome(
                     userId = currentUser.uid,
                     onLogout = {
                         auth.signOut()

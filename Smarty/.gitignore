@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Local shared-fridge verification
+tests/node_modules/
+*debug.log

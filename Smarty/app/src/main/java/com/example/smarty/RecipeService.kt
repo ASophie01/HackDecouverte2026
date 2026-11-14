@@ -224,15 +224,20 @@ class RecipeService {
 
     fun confirmCooking(
         userId: String,
+        fridgeId: String,
         recipe: RecipeSuggestion
     ): Task<Boolean> {
         val db = FirebaseFirestore.getInstance()
-        val user = db.collection("users").document(userId)
-        val receipt = user.collection("cookedRecipes").document(recipe.id)
+        val fridge = db.collection("fridges").document(fridgeId)
+        val receipt = fridge.collection("cookedRecipes").document(recipe.id)
 
         return db.runTransaction { transaction ->
             check(FirebaseAuth.getInstance().currentUser?.uid == userId) {
                 "Please sign in again."
+            }
+
+            check(transaction.get(fridge.collection("members").document(userId)).exists()) {
+                "You no longer have access to this fridge."
             }
 
             // A retry or second tap must not deduct twice.
@@ -253,7 +258,7 @@ class RecipeService {
 
             // Read everything before making any writes.
             val changes = recipe.fridgeIngredients.map { usage ->
-                val reference = user.collection("items")
+                val reference = fridge.collection("items")
                     .document(usage.itemId)
 
                 val current = transaction.get(reference)
@@ -297,6 +302,7 @@ class RecipeService {
             transaction.set(
                 receipt,
                 mapOf(
+                    "cookedBy" to userId,
                     "title" to recipe.title,
                     "servings" to recipe.servings,
                     "cookedAt" to FieldValue.serverTimestamp()

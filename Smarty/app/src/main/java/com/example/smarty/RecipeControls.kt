@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun RecipeControls(
     userId: String,
+    fridgeId: String,
     inventory: List<FridgeItem>
 ) {
     val service = remember { RecipeService() }
@@ -277,6 +278,7 @@ fun RecipeControls(
 
                             service.confirmCooking(
                                 userId,
+                                fridgeId,
                                 currentRecipe
                             ).addOnCompleteListener { task ->
                                 cooking = false

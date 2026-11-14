@@ -19,12 +19,14 @@ import java.time.LocalDate
 @Composable
 fun FridgeScreen(
     userId: String,
+    fridgeId: String,
+    fridgeName: String,
     onLogout: () -> Unit
 ) {
-    val collection = remember(userId) {
+    val collection = remember(fridgeId) {
         FirebaseFirestore.getInstance()
-            .collection("users")
-            .document(userId)
+            .collection("fridges")
+            .document(fridgeId)
             .collection("items")
     }
 
@@ -74,7 +76,7 @@ fun FridgeScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "My fridge",
+                text = fridgeName,
                 style = MaterialTheme.typography.headlineMedium
             )
 
@@ -84,9 +86,10 @@ fun FridgeScreen(
         }
 
         Text("Use what you have. Waste less.")
-        ReminderControls(userId = userId)
+        ReminderControls(userId = userId, fridgeId = fridgeId)
         RecipeControls(
             userId = userId,
+            fridgeId = fridgeId,
             inventory = fridgeItems
         )
 

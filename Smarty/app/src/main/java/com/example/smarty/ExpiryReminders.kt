@@ -30,6 +30,7 @@ private const val CHANNEL_ID = "expiry_reminders"
 private const val NOTIFICATION_ID = 1001
 private const val DAILY_WORK = "daily_expiry_check"
 private const val TEST_WORK = "manual_expiry_check"
+private const val SHARED_TAG = "shared_fridge_expiry"
 
 private fun notificationAllowed(context: Context): Boolean {
     return Build.VERSION.SDK_INT < 33 ||
@@ -45,41 +46,55 @@ private fun reminderConstraints(): Constraints {
         .build()
 }
 
-fun enableExpiryReminders(context: Context, userId: String) {
+fun enableExpiryReminders(context: Context, userId: String, fridgeId: String) {
     val request = PeriodicWorkRequestBuilder<ExpiryWorker>(
         24, TimeUnit.HOURS
     )
-        .setInputData(workDataOf("userId" to userId))
+        .setInputData(workDataOf("userId" to userId, "fridgeId" to fridgeId))
+        .addTag(SHARED_TAG)
         .setConstraints(reminderConstraints())
         .build()
 
     WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-        DAILY_WORK,
+        "${DAILY_WORK}_${userId}_$fridgeId",
         ExistingPeriodicWorkPolicy.UPDATE,
         request
     )
 }
 
-fun checkExpiryNow(context: Context, userId: String) {
+fun checkExpiryNow(context: Context, userId: String, fridgeId: String) {
     val request = OneTimeWorkRequestBuilder<ExpiryWorker>()
-        .setInputData(workDataOf("userId" to userId))
+        .setInputData(workDataOf("userId" to userId, "fridgeId" to fridgeId))
+        .addTag(SHARED_TAG)
         .setConstraints(reminderConstraints())
         .build()
 
     WorkManager.getInstance(context).enqueueUniqueWork(
-        TEST_WORK,
+        "${TEST_WORK}_${userId}_$fridgeId",
         ExistingWorkPolicy.REPLACE,
         request
     )
 }
 
-fun disableExpiryReminders(context: Context) {
+fun cancelLegacyExpiryReminders(context: Context) {
     WorkManager.getInstance(context).apply {
         cancelUniqueWork(DAILY_WORK)
         cancelUniqueWork(TEST_WORK)
     }
-
     NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+}
+
+fun disableExpiryReminders(context: Context, userId: String? = null, fridgeId: String? = null) {
+    val manager = WorkManager.getInstance(context)
+    if (userId != null && fridgeId != null) {
+        manager.cancelUniqueWork("${DAILY_WORK}_${userId}_$fridgeId")
+        manager.cancelUniqueWork("${TEST_WORK}_${userId}_$fridgeId")
+        NotificationManagerCompat.from(context).cancel(fridgeId, NOTIFICATION_ID)
+    } else {
+        manager.cancelAllWorkByTag(SHARED_TAG)
+        cancelLegacyExpiryReminders(context)
+        NotificationManagerCompat.from(context).cancelAll()
+    }
 }
 
 class ExpiryWorker(
@@ -90,6 +105,8 @@ class ExpiryWorker(
     override fun doWork(): Result {
         val userId = inputData.getString("userId")
             ?: return Result.failure()
+
+        val fridgeId = inputData.getString("fridgeId") ?: return Result.success()
 
         // Never read another account's inventory.
         if (FirebaseAuth.getInstance().currentUser?.uid != userId) {
@@ -104,10 +121,11 @@ class ExpiryWorker(
             val today = LocalDate.now()
             val lastDay = today.plusDays(3)
 
-            val query = FirebaseFirestore.getInstance()
-                .collection("users")
-                .document(userId)
-                .collection("items")
+            val fridge = FirebaseFirestore.getInstance().collection("fridges").document(fridgeId)
+            val membership = Tasks.await(fridge.collection("members").document(userId).get(Source.SERVER), 30, TimeUnit.SECONDS)
+            if (!membership.exists()) return Result.success()
+            val fridgeName = Tasks.await(fridge.get(Source.SERVER), 30, TimeUnit.SECONDS).getString("name") ?: "Your fridge"
+            val query = fridge.collection("items")
                 .whereGreaterThanOrEqualTo(
                     "expiryDate",
                     today.toString()
@@ -138,9 +156,9 @@ class ExpiryWorker(
 
             if (names.isEmpty()) {
                 NotificationManagerCompat.from(applicationContext)
-                    .cancel(NOTIFICATION_ID)
+                    .cancel(fridgeId, NOTIFICATION_ID)
             } else {
-                showReminder(names)
+                showReminder(names, fridgeId, fridgeName)
             }
 
             Result.success()
@@ -153,7 +171,7 @@ class ExpiryWorker(
         }
     }
 
-    private fun showReminder(names: List<String>) {
+    private fun showReminder(names: List<String>, fridgeId: String, fridgeName: String) {
         val context = applicationContext
 
         if (!notificationAllowed(context)) return
@@ -171,6 +189,8 @@ class ExpiryWorker(
         )
 
         val intent = Intent(context, MainActivity::class.java).apply {
+            data = android.net.Uri.parse("smarty://fridge/$fridgeId")
+            putExtra("openFridgeId", fridgeId)
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -198,7 +218,7 @@ class ExpiryWorker(
             CHANNEL_ID
         )
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Check your fridge")
+            .setContentTitle("Check $fridgeName")
             .setContentText(message)
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(message)
@@ -210,7 +230,7 @@ class ExpiryWorker(
 
         try {
             NotificationManagerCompat.from(context)
-                .notify(NOTIFICATION_ID, notification)
+                .notify(fridgeId, NOTIFICATION_ID, notification)
         } catch (_: SecurityException) {
             // Permission may have been revoked during the check.
         }
@@ -218,17 +238,17 @@ class ExpiryWorker(
 }
 
 @Composable
-fun ReminderControls(userId: String) {
+fun ReminderControls(userId: String, fridgeId: String) {
     val context = LocalContext.current
     var message by remember { mutableStateOf("") }
     var pendingAction by remember { mutableStateOf("") }
 
     fun runAction(action: String) {
         if (action == "enable") {
-            enableExpiryReminders(context, userId)
-            message = "Daily reminders enabled."
+            enableExpiryReminders(context, userId, fridgeId)
+            message = "Daily reminders enabled for this fridge on this device."
         } else {
-            checkExpiryNow(context, userId)
+            checkExpiryNow(context, userId, fridgeId)
             message = "Check queued. A notification appears if items qualify."
         }
     }
@@ -265,8 +285,8 @@ fun ReminderControls(userId: String) {
 
         TextButton(
             onClick = {
-                disableExpiryReminders(context)
-                message = "Reminders disabled."
+                disableExpiryReminders(context, userId, fridgeId)
+                message = "Reminders disabled for this fridge on this device."
             }
         ) {
             Text("Disable reminders")
