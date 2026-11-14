@@ -3,7 +3,7 @@
 # How does it work #
 
 ```
-Smarty is a grocery tracking app that allows you to keep track of the when your grocery items are going to expire. The user can add an item,
+Smarty is a grocery tracking app that allows you to keep track of when your grocery items are going to expire. The user can add an item,
 add a the expiration date as well as a reminder of when the item is soon to be expired. They can also scan (or manually input) the item barcode
 for it to automatically fill out the item information (name, expiration date, etc.). Smarty will also let you be able to join a family fridge
 by inputing a code. Then you would be able to have a shared fridge with your family! Based on the saved items, an AI will suggest a recipe
