@@ -6,6 +6,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.smarty.ui.components.*
+import com.example.smarty.ui.theme.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -80,15 +86,30 @@ fun SharedFridgeHome(userId: String, onLogout: () -> Unit) {
 
     val selected = fridges.firstOrNull { it.id == selectedId }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.statusBarsPadding().padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TextButton(onClick = { showManager = true }, enabled = ready && !busy) {
-                Text("Switch / create / join")
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            SmartyBrand()
+            Text("Less waste.\nMore meals.", style = MaterialTheme.typography.labelMedium, color = InkMuted)
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                onClick = { showManager = true }, enabled = ready && !busy,
+                modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp),
+                color = Cream, border = BorderStroke(1.dp, WarmOutline)
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AppGlyph("people")
+                    Column(Modifier.weight(1f)) {
+                        Text(selected?.name ?: "Your fridges", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Tap to switch, create or join", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                    }
+                    AppGlyph("chevron", label = "Choose a fridge")
+                }
             }
-            TextButton(
+            FilledTonalIconButton(
                 enabled = selected != null && !busy,
                 onClick = {
                     val current = selected
@@ -101,7 +122,7 @@ fun SharedFridgeHome(userId: String, onLogout: () -> Unit) {
                         }
                     }
                 }
-            ) { Text("Invite code") }
+            ) { AppGlyph("plus", label = "Invite someone to this fridge") }
         }
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
@@ -203,8 +224,8 @@ fun SharedFridgeHome(userId: String, onLogout: () -> Unit) {
     code?.let { invite ->
         AlertDialog(
             onDismissRequest = { code = null },
-            title = { Text("Invite someone") },
-            text = { Text("Share this code with your family. Anyone signed in with the code can join.\n\n$invite") },
+            title = { Text("Good food is better shared") },
+            text = { Text("Send this code to your family or roommates. Anyone signed in with the code can join.\n\n$invite") },
             confirmButton = {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(invite)); code = null }) { Text("Copy code") }
             },

@@ -2,10 +2,11 @@ package com.example.smarty.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
-
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val Cream = Color(0xFFFAF7EF)
+val Sage = Color(0xFF59745B)
+val Forest = Color(0xFF203524)
+val PaleSage = Color(0xFFE8EEDB)
+val Peach = Color(0xFFFFE1CC)
+val InkMuted = Color(0xFF667062)
+val WarmOutline = Color(0xFFDDDCD0)
+val AmberSoft = Color(0xFFFFE9B5)

@@ -6,6 +6,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import com.example.smarty.ui.components.*
+import com.example.smarty.ui.theme.*
+import com.example.smarty.ui.amountLabel
 import androidx.compose.ui.unit.dp
 import com.example.smarty.model.*
 import kotlinx.coroutines.CancellationException
@@ -15,7 +23,10 @@ import kotlinx.coroutines.launch
 fun RecipeControls(
     userId: String,
     fridgeId: String,
-    inventory: List<FridgeItem>
+    inventory: List<FridgeItem>,
+    launchRequest: Int = 0,
+    buttonVisible: Boolean = true,
+    onBusyChange: (Boolean) -> Unit = {}
 ) {
     val service = remember { RecipeService() }
     val scope = rememberCoroutineScope()
@@ -33,8 +44,16 @@ fun RecipeControls(
     var error by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
-    Column {
-        Button(
+    LaunchedEffect(launchRequest) {
+        if (launchRequest > 0 && !loading && !cooking) {
+            error = null; message = null; showPreferences = true
+        }
+    }
+    LaunchedEffect(loading, cooking) { onBusyChange(loading || cooking) }
+
+    Column(Modifier.fillMaxWidth()) {
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (buttonVisible) Button(
             enabled = inventory.isNotEmpty() && !loading && !cooking,
             onClick = {
                 error = null
@@ -46,11 +65,11 @@ fun RecipeControls(
         }
 
         error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error)
+            Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { MessageBanner(it) }
         }
 
         message?.let {
-            Text(it)
+            Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { MessageBanner(it, isError = false) }
         }
     }
 
@@ -67,31 +86,13 @@ fun RecipeControls(
                     Text("How hungry are you?")
 
                     HungerLevel.entries.forEach { option ->
-                        Row {
-                            RadioButton(
-                                selected = hunger == option,
-                                onClick = { hunger = option }
-                            )
-                            Text(
-                                text = option.label,
-                                modifier = Modifier.padding(top = 12.dp)
-                            )
-                        }
+                        PreferenceChoice(option.label, hunger == option) { hunger = option }
                     }
 
                     Text("Sweet or savory?")
 
                     TastePreference.entries.forEach { option ->
-                        Row {
-                            RadioButton(
-                                selected = taste == option,
-                                onClick = { taste = option }
-                            )
-                            Text(
-                                text = option.label,
-                                modifier = Modifier.padding(top = 12.dp)
-                            )
-                        }
+                        PreferenceChoice(option.label, taste == option) { taste = option }
                     }
 
                     Row {
@@ -163,149 +164,131 @@ fun RecipeControls(
     }
 
     val currentRecipe = recipe
-
     if (currentRecipe != null) {
         val alreadyCooked = currentRecipe.id in cookedIds
-
-        AlertDialog(
-            onDismissRequest = {
-                if (!cooking) recipe = null
-            },
-            title = { Text(currentRecipe.title) },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(
-                        rememberScrollState()
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "${currentRecipe.servings} serving(s) · " +
-                                "${currentRecipe.preparationMinutes} min"
-                    )
-
-                    Text(currentRecipe.explanation)
-
-                    Text(
-                        "From your fridge — totals for all servings:",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-
-                    currentRecipe.fridgeIngredients.forEach {
-                        Text("• ${it.quantity} ${it.unit} ${it.name}")
+        Dialog(
+            onDismissRequest = { if (!cooking) recipe = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(Modifier.fillMaxSize(), color = Cream) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(enabled = !cooking, onClick = { recipe = null }) { AppGlyph("back", "Close recipe") }
+                        Text("Made for your fridge", style = MaterialTheme.typography.titleMedium)
                     }
-
-                    Text(
-                        "Additional ingredients needed:",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-
-                    if (currentRecipe.missingIngredients.isEmpty()) {
-                        Text("None listed.")
-                    } else {
-                        currentRecipe.missingIngredients.forEach {
-                            Text("• ${it.quantity} ${it.unit} ${it.name}")
+                    Column(
+                        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { MealIllustration(Modifier.size(156.dp)) }
+                        Text(currentRecipe.title, style = MaterialTheme.typography.headlineMedium)
+                        Text(currentRecipe.explanation, style = MaterialTheme.typography.bodyLarge, color = InkMuted)
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            SuggestionBadge("${currentRecipe.preparationMinutes} min", "clock")
+                            SuggestionBadge("${currentRecipe.servings} serving(s)", "people")
                         }
-                    }
-
-                    Text(
-                        "Instructions:",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-
-                    currentRecipe.steps.forEachIndexed { index, step ->
-                        Text("${index + 1}. $step")
-                    }
-
-                    Text(
-                        "Check ingredient suitability and quantities " +
-                                "before cooking."
-                    )
-
-                    error?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    if (alreadyCooked) {
-                        Text("Saved! Your fridge has been updated.")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !cooking && !alreadyCooked,
-                    onClick = { showConfirmation = true }
-                ) {
-                    Text(
-                        when {
-                            cooking -> "Updating..."
-                            alreadyCooked -> "Already recorded"
-                            else -> "I cooked this"
+                        Text("${hunger.label} · ${taste.label}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Surface(color = PaleSage, shape = RoundedCornerShape(22.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("From your fridge", style = MaterialTheme.typography.titleLarge)
+                                Text("Totals for all ${currentRecipe.servings} serving(s)", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                                currentRecipe.fridgeIngredients.forEach {
+                                    IngredientRow(it.name, "${amountLabel(it.quantity)} ${it.unit}")
+                                }
+                            }
                         }
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    enabled = !cooking,
-                    onClick = { recipe = null }
-                ) {
-                    Text("Close")
+                        Surface(color = Peach.copy(alpha = 0.55f), shape = RoundedCornerShape(22.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("You will also need", style = MaterialTheme.typography.titleMedium)
+                                if(currentRecipe.missingIngredients.isEmpty()) Text("Nothing extra listed.", style = MaterialTheme.typography.bodyMedium)
+                                currentRecipe.missingIngredients.forEach {
+                                    IngredientRow(it.name, "${amountLabel(it.quantity)} ${it.unit}")
+                                }
+                            }
+                        }
+                        Text("Let's make it", style = MaterialTheme.typography.titleLarge)
+                        currentRecipe.steps.forEachIndexed { index, step ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Surface(color = PaleSage, shape = CircleShape, modifier = Modifier.size(30.dp)) {
+                                    Box(contentAlignment = Alignment.Center) { Text("${index + 1}", style = MaterialTheme.typography.labelLarge) }
+                                }
+                                Text(step, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                        Text("Review ingredient suitability and quantities. The illustration is a general meal icon, not a photo of this recipe.", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                        error?.let { MessageBanner(it) }
+                        if(alreadyCooked) MessageBanner("Cooking recorded. Your shared fridge is up to date.", isError = false)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Button(
+                            enabled = !cooking && !alreadyCooked,
+                            onClick = { showConfirmation = true },
+                            modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp)
+                        ) {
+                            AppGlyph("check", tint = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(Modifier.width(10.dp))
+                            Text(when { cooking -> "Updating fridge..."; alreadyCooked -> "Already recorded"; else -> "I cooked this" })
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text("Review quantities before updating your fridge.", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                    }
                 }
             }
-        )
-
+        }
         if (showConfirmation) {
             AlertDialog(
                 onDismissRequest = { showConfirmation = false },
                 title = { Text("Update your fridge?") },
-                text = {
-                    Text(
-                        "Deduct the listed fridge quantities for all " +
-                                "${currentRecipe.servings} serving(s)? " +
-                                "Additional ingredients are not deducted."
-                    )
-                },
+                text = { Text("Deduct the listed fridge quantities for all ${currentRecipe.servings} serving(s)? Additional ingredients are not deducted.") },
                 confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showConfirmation = false
-                            cooking = true
-                            error = null
-
-                            service.confirmCooking(
-                                userId,
-                                fridgeId,
-                                currentRecipe
-                            ).addOnCompleteListener { task ->
-                                cooking = false
-
-                                if (task.isSuccessful) {
-                                    cookedIds =
-                                        cookedIds + currentRecipe.id
-                                    message = "Cooking recorded."
-                                } else {
-                                    error = task.exception
-                                        ?.localizedMessage
-                                        ?: "Could not update the fridge."
-                                }
+                    TextButton(onClick = {
+                        showConfirmation = false
+                        cooking = true
+                        error = null
+                        service.confirmCooking(userId, fridgeId, currentRecipe).addOnCompleteListener { task ->
+                            cooking = false
+                            if (task.isSuccessful) {
+                                cookedIds = cookedIds + currentRecipe.id
+                                message = "Cooking recorded."
+                            } else {
+                                error = task.exception?.localizedMessage ?: "Could not update the fridge."
                             }
                         }
-                    ) {
-                        Text("Confirm")
-                    }
+                    }) { Text("Confirm cooking") }
                 },
-                dismissButton = {
-                    TextButton(
-                        onClick = { showConfirmation = false }
-                    ) {
-                        Text("Cancel")
-                    }
-                }
+                dismissButton = { TextButton(onClick = { showConfirmation = false }) { Text("Cancel") } }
             )
+        }
+    }
+}
+
+@Composable
+private fun SuggestionBadge(text: String, icon: String) {
+    Surface(shape = RoundedCornerShape(50), color = PaleSage) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppGlyph(icon, modifier = Modifier.size(18.dp))
+            Text(text, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun IngredientRow(name: String, amount: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        FoodIllustration(name, modifier = Modifier.size(38.dp))
+        Text(name, Modifier.weight(1f).padding(horizontal = 8.dp), style = MaterialTheme.typography.titleSmall)
+        Text(amount, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun PreferenceChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = if(selected) PaleSage else Cream,
+        shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = selected, onClick = null)
+            Text(label, Modifier.padding(start = 8.dp, top = 10.dp, bottom = 10.dp), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

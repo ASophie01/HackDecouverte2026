@@ -10,7 +10,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.example.smarty.ui.components.*
+import com.example.smarty.ui.theme.*
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -274,26 +280,18 @@ fun ReminderControls(userId: String, fridgeId: String) {
         }
     }
 
-    Column {
-        TextButton(onClick = { requestAction("enable") }) {
-            Text("Enable daily reminders")
-        }
-
-        TextButton(onClick = { requestAction("check") }) {
-            Text("Check expiry now")
-        }
-
-        TextButton(
-            onClick = {
+    Surface(color = PaleSage, shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("A gentle nudge", style = MaterialTheme.typography.titleLarge)
+            Text("Get a reminder when an entered expiry date is within three days.", style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = { requestAction("enable") }, modifier = Modifier.fillMaxWidth()) { Text("Enable daily reminders") }
+            OutlinedButton(onClick = { requestAction("check") }, modifier = Modifier.fillMaxWidth()) { Text("Check expiry now") }
+            TextButton(onClick = {
                 disableExpiryReminders(context, userId, fridgeId)
                 message = "Reminders disabled for this fridge on this device."
-            }
-        ) {
-            Text("Disable reminders")
-        }
-
-        if (message.isNotEmpty()) {
-            Text(message)
+            }) { Text("Disable for this fridge") }
+            if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodyMedium)
+            Text("This device only · Internet required · Android may delay daily checks.", style = MaterialTheme.typography.bodySmall, color = InkMuted)
         }
     }
 }

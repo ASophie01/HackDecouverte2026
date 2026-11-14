@@ -1,6 +1,11 @@
 package com.example.smarty
 
 import android.util.Patterns
+import com.example.smarty.ui.components.*
+import com.example.smarty.ui.theme.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -77,22 +82,16 @@ private fun AuthScreen(auth: FirebaseAuth) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Smarty",
-            style = MaterialTheme.typography.headlineLarge
-        )
-
-        Text("Less waste. A smarter fridge.")
-
-        Spacer(Modifier.height(32.dp))
-
-        Text(
-            text = if (isRegistering) "Create an account" else "Log in",
-            style = MaterialTheme.typography.headlineSmall
-        )
-
-        Spacer(Modifier.height(16.dp))
-
+        SmartyBrand(large = true)
+        Spacer(Modifier.height(8.dp))
+        Text("Less waste. More meals.", color = InkMuted, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(28.dp))
+        Surface(color = Color.White.copy(alpha = 0.55f), shape = RoundedCornerShape(28.dp), border = BorderStroke(1.dp, WarmOutline)) {
+            Column(Modifier.padding(20.dp)) {
+                Text(if (isRegistering) "Let's get you started" else "Welcome back", style = MaterialTheme.typography.headlineSmall)
+                Text(if(isRegistering) "Good food starts with a little teamwork." else "Your groceries have missed you.",
+                    style = MaterialTheme.typography.bodyMedium, color = InkMuted)
+                Spacer(Modifier.height(20.dp))
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -224,6 +223,8 @@ private fun AuthScreen(auth: FirebaseAuth) {
                     "New here? Create an account"
                 }
             )
+        }
+            }
         }
     }
 }

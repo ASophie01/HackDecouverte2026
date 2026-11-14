@@ -5,8 +5,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import com.example.smarty.ui.components.AppGlyph
 import com.example.smarty.model.ProductBarcodeParser
 import com.example.smarty.model.ScannedProduct
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -60,8 +62,10 @@ fun BarcodeLookupControls(onProduct: (ScannedProduct) -> Unit) {
         }
     }
 
-    Button(onClick = { code = ""; error = null; showDialog = true }) {
-        Text("Scan / barcode")
+    FilledTonalButton(onClick = { code = ""; error = null; showDialog = true }, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)) {
+        AppGlyph("scan")
+        Spacer(Modifier.width(6.dp))
+        Text("Scan")
     }
 
     if (showDialog) {

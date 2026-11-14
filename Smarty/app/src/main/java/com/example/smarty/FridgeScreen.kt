@@ -10,6 +10,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.smarty.ui.*
+import com.example.smarty.ui.components.*
+import com.example.smarty.ui.theme.*
+import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.smarty.model.FridgeItem
@@ -37,6 +47,11 @@ fun FridgeScreen(
     var loading by remember(userId) { mutableStateOf(true) }
     var error by remember(userId) { mutableStateOf<String?>(null) }
 
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var category by rememberSaveable { mutableStateOf("All") }
+    var recipeRequest by remember { mutableStateOf(0) }
+    var recipeBusy by remember { mutableStateOf(false) }
+    var removeCandidate by remember { mutableStateOf<FridgeItem?>(null) }
     var pendingProduct by remember { mutableStateOf<ScannedProduct?>(null) }
     var showForm by remember { mutableStateOf(false) }
     var selectedItem by remember { mutableStateOf<FridgeItem?>(null) }
@@ -67,157 +82,165 @@ fun FridgeScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(20.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = fridgeName,
-                style = MaterialTheme.typography.headlineMedium
-            )
+    fun editItem(item: FridgeItem) {
+        pendingProduct = null
+        selectedItem = item
+        formError = null
+        showForm = true
+    }
 
-            TextButton(onClick = onLogout) {
-                Text("Log out")
-            }
-        }
+    fun openRecipes() { if (!recipeBusy) recipeRequest++ }
+    val soon = fridgeItems.filter { isUseSoon(it) }.sortedBy { it.expiryDate }
+    val visible = fridgeItems.filter { category == "All" || foodKind(it.name, it.category).group == category }
 
-        Text("Use what you have. Waste less.")
-        ReminderControls(userId = userId, fridgeId = fridgeId)
-        RecipeControls(
-            userId = userId,
-            fridgeId = fridgeId,
-            inventory = fridgeItems
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    selectedItem = null
-                    pendingProduct = null
-                    formError = null
-                    showForm = true
+    Scaffold(
+        containerColor = Cream,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            NavigationBar(containerColor = Cream, tonalElevation = 0.dp) {
+                listOf("Fridge" to "fridge", "Recipes" to "recipe", "Settings" to "settings").forEachIndexed { index, (label, icon) ->
+                    NavigationBarItem(
+                        selected = tab == index, onClick = { tab = index },
+                        icon = { AppGlyph(icon) }, label = { Text(label) },
+                        colors = NavigationBarItemDefaults.colors(indicatorColor = PaleSage, selectedTextColor = Forest, unselectedTextColor = InkMuted)
+                    )
                 }
-            ) { Text("+ Add item") }
-            BarcodeLookupControls { product ->
-                selectedItem = null
-                pendingProduct = product
-                formError = null
-                showForm = true
             }
-        }
-
-        error?.let { message ->
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        when {
-            loading -> CircularProgressIndicator()
-
-            fridgeItems.isEmpty() -> {
-                Text("Your fridge is empty. Add your first item!")
-            }
-
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(fridgeItems, key = { it.id }) { item ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
-                                Text(
-                                    text = item.name,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-
-                                Text("${item.quantity} ${item.unit}")
-                                Text("Expiry date: ${item.expiryDate}")
-
-                                val date = runCatching {
-                                    LocalDate.parse(item.expiryDate)
-                                }.getOrNull()
-
-                                val today = LocalDate.now()
-
-                                when {
-                                    date == null -> Unit
-
-                                    date.isBefore(today) -> Text(
-                                        text = "Past the entered date",
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-
-                                    !date.isAfter(today.plusDays(3)) -> Text(
-                                        text = "Use soon",
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-
-                                Row {
-                                    TextButton(
-                                        enabled = item.id !in deletingIds,
-                                        onClick = {
-                                            pendingProduct = null
-                                            selectedItem = item
-                                            formError = null
-                                            showForm = true
-                                        }
-                                    ) {
-                                        Text("Edit")
-                                    }
-
-                                    TextButton(
-                                        enabled = item.id !in deletingIds,
-                                        onClick = {
-                                            error = null
-                                            deletingIds = deletingIds + item.id
-
-                                            collection.document(item.id)
-                                                .delete()
-                                                .addOnCompleteListener { task ->
-                                                    deletingIds =
-                                                        deletingIds - item.id
-
-                                                    if (!task.isSuccessful) {
-                                                        error = task.exception
-                                                            ?.localizedMessage
-                                                            ?: "Could not remove item."
-                                                    }
-                                                }
-                                        }
-                                    ) {
-                                        Text(
-                                            if (item.id in deletingIds) {
-                                                "Removing..."
-                                            } else {
-                                                "Remove"
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+        },
+        floatingActionButton = {
+            if (tab == 0) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        selectedItem = null; pendingProduct = null; formError = null; showForm = true
+                    }, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)) {
+                        AppGlyph("plus", tint = MaterialTheme.colorScheme.onPrimary)
+                        Spacer(Modifier.width(6.dp)); Text("Add item")
+                    }
+                    BarcodeLookupControls { product ->
+                        selectedItem = null; pendingProduct = product; formError = null; showForm = true
                     }
                 }
             }
         }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            error?.let { Box(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) { MessageBanner(it) } }
+            Box(Modifier.weight(1f)) {
+                when (tab) {
+                    0 -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 100.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        item {
+                            Text("My fridge", style = MaterialTheme.typography.headlineLarge)
+                            Text("A little less waste. A lot more possibility.", style = MaterialTheme.typography.bodyMedium, color = InkMuted)
+                        }
+                        if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                        if (!loading && soon.isNotEmpty()) item {
+                            Surface(color = Peach, shape = RoundedCornerShape(24.dp)) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("Use soon", style = MaterialTheme.typography.headlineSmall)
+                                    Text("Good food deserves a second chance.", style = MaterialTheme.typography.bodyMedium)
+                                    soon.take(3).forEach { item ->
+                                        Surface(onClick = { editItem(item) }, enabled = item.id !in deletingIds, color = Cream, shape = RoundedCornerShape(18.dp)) {
+                                            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                FoodIllustration(item.name, item.category, Modifier.size(46.dp))
+                                                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                                    Text(item.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    Text("${amountLabel(item.quantity)} ${item.unit}", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                                                }
+                                                ExpiryBadge(item)
+                                            }
+                                        }
+                                    }
+                                    if (soon.size > 3) Text("${soon.size - 3} more in your list below", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                        item {
+                            Button(onClick = { openRecipes() }, enabled = fridgeItems.isNotEmpty() && !recipeBusy,
+                                modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp)) {
+                                AppGlyph("sparkle", tint = MaterialTheme.colorScheme.onPrimary)
+                                Spacer(Modifier.width(10.dp)); Text(if(recipeBusy) "Finding something delicious..." else "What can I cook?")
+                            }
+                        }
+                        item {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("All items", style = MaterialTheme.typography.titleLarge)
+                                Text("${fridgeItems.size} item${if(fridgeItems.size == 1) "" else "s"}", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                            }
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("All", "Dairy", "Veggies", "Fruit", "Protein", "Pantry").forEach { group ->
+                                    FilterChip(selected = category == group, onClick = { category = group }, label = { Text(group) })
+                                }
+                            }
+                        }
+                        if (!loading && visible.isEmpty()) item {
+                            Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                FoodIllustration("", modifier = Modifier.size(90.dp))
+                                Text(if(fridgeItems.isEmpty()) "Fresh start, fresh fridge." else "Nothing in this category yet.", style = MaterialTheme.typography.titleMedium)
+                                Text("Add an item or scan your groceries.", color = InkMuted, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        items(visible, key = { it.id }) { item ->
+                            InventoryItemCard(item, item.id in deletingIds, onEdit = { editItem(item) }, onRemove = { removeCandidate = item })
+                        }
+                    }
+                    1 -> Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Something delicious awaits", style = MaterialTheme.typography.headlineMedium)
+                        MealIllustration(Modifier.size(180.dp))
+                        Text("Made for your fridge", style = MaterialTheme.typography.titleLarge)
+                        Text("Tell us what you're craving. We'll look for a recipe using what you have, with ingredients to use soon first.",
+                            style = MaterialTheme.typography.bodyLarge, color = InkMuted)
+                        HintCard("Your ingredients, your appetite", "Choose sweet or savory, how hungry you are, and how many people are eating.")
+                        Button(onClick = { openRecipes() }, enabled = fridgeItems.isNotEmpty() && !recipeBusy,
+                            modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp)) {
+                            Text(if(recipeBusy) "Finding a recipe..." else "Find a recipe")
+                        }
+                        if(fridgeItems.isEmpty()) Text("Add a fridge item to get started.", color = InkMuted)
+                        Text("Ideas are AI-generated. Review ingredients and quantities before cooking.", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                    }
+                    else -> Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+                        Text("Make yourself at home", style = MaterialTheme.typography.headlineMedium)
+                        Text("A few helpful things, all in one place.", color = InkMuted)
+                        ReminderControls(userId = userId, fridgeId = fridgeId)
+                        HintCard("Your active fridge", fridgeName)
+                        Surface(color = PaleSage, shape = RoundedCornerShape(22.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Your account", style = MaterialTheme.typography.titleMedium)
+                                Text(FirebaseAuth.getInstance().currentUser?.email.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+                                OutlinedButton(onClick = onLogout) { Text("Log out") }
+                            }
+                        }
+                        Text("Smarty · Less waste. More meals.", style = MaterialTheme.typography.bodySmall, color = InkMuted)
+                    }
+                }
+            }
+            // Kept mounted across tabs so an in-flight recipe request isn't discarded.
+            RecipeControls(userId = userId, fridgeId = fridgeId, inventory = fridgeItems,
+                launchRequest = recipeRequest, buttonVisible = false, onBusyChange = { recipeBusy = it })
+        }
+    }
+
+    removeCandidate?.let { item ->
+        AlertDialog(onDismissRequest = { removeCandidate = null }, title = { Text("Remove ${item.name}?") },
+            text = { Text("This removes it from $fridgeName for everyone with access.") },
+            confirmButton = { TextButton(onClick = {
+                removeCandidate = null; error = null; deletingIds = deletingIds + item.id
+                collection.document(item.id).delete().addOnCompleteListener { task ->
+                    deletingIds = deletingIds - item.id
+                    if (!task.isSuccessful) error = task.exception?.localizedMessage ?: "Could not remove item."
+                }
+            }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { removeCandidate = null }) { Text("Keep item") } })
     }
 
     if (showForm) {
@@ -227,7 +250,7 @@ fun FridgeScreen(
                 prefill = pendingProduct,
                 saving = saving,
                 saveError = formError,
-                onDismiss = { showForm = false },
+                onDismiss = { if (!saving) showForm = false },
                 onSave = { name, quantity, unit, expiryDate ->
                     saving = true
                     formError = null
@@ -280,6 +303,7 @@ private fun ItemFormDialog(
     onDismiss: () -> Unit,
     onSave: (String, Double, String, String) -> Unit
 ) {
+    val context = LocalContext.current
     var name by rememberSaveable {
         mutableStateOf(initialItem?.name ?: prefill?.name.orEmpty())
     }
@@ -307,9 +331,9 @@ private fun ItemFormDialog(
         title = {
             Text(
                 if (initialItem == null) {
-                    "Add fridge item"
+                    "Add to your fridge"
                 } else {
-                    "Edit fridge item"
+                    "Edit your item"
                 }
             )
         },
@@ -362,6 +386,14 @@ private fun ItemFormDialog(
                     value = expiryDate,
                     onValueChange = { expiryDate = it },
                     label = { Text("Expiry date: YYYY-MM-DD") },
+                    trailingIcon = {
+                        IconButton(enabled = !saving, onClick = {
+                            val current = runCatching { LocalDate.parse(expiryDate) }.getOrDefault(LocalDate.now())
+                            android.app.DatePickerDialog(context, { _, year, month, day ->
+                                expiryDate = LocalDate.of(year, month + 1, day).toString()
+                            }, current.year, current.monthValue - 1, current.dayOfMonth).show()
+                        }) { AppGlyph("calendar", label = "Choose expiry date") }
+                    },
                     singleLine = true,
                     enabled = !saving,
                     modifier = Modifier.fillMaxWidth()
@@ -429,4 +461,26 @@ private fun ItemFormDialog(
             }
         }
     )
+}
+
+@Composable
+private fun InventoryItemCard(item: FridgeItem, busy: Boolean, onEdit: () -> Unit, onRemove: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Surface(Modifier.fillMaxWidth(), color = Cream, shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, WarmOutline)) {
+        Row(Modifier.padding(start = 10.dp, top = 12.dp, bottom = 12.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            FoodIllustration(item.name, item.category)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("${amountLabel(item.quantity)} ${item.unit}", style = MaterialTheme.typography.bodyMedium, color = InkMuted)
+                ExpiryBadge(item)
+            }
+            Box {
+                IconButton(onClick = { menu = true }, enabled = !busy) { AppGlyph("more", label = "Item actions for ${item.name}") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Edit item") }, onClick = { menu = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Remove", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onRemove() })
+                }
+            }
+        }
+    }
 }
