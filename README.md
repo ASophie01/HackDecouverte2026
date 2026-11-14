@@ -1,6 +1,6 @@
-Smarty
+# Smarty #
 
-#How does it work#
+# How does it work #
 
 ```
 Smarty is a grocery tracking app that allows you to keep track of the when your grocery items are going to expire. The user can add an item,
