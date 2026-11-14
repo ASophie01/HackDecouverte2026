@@ -14,10 +14,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun SmartyApp() {
     val auth = remember { FirebaseAuth.getInstance() }
+    val context = LocalContext.current
     var user by remember { mutableStateOf(auth.currentUser) }
 
     DisposableEffect(auth) {
@@ -44,7 +46,10 @@ fun SmartyApp() {
             key(currentUser.uid) {
                 FridgeScreen(
                     userId = currentUser.uid,
-                    onLogout = { auth.signOut() }
+                    onLogout = {
+                        auth.signOut()
+                        disableExpiryReminders(context)
+                    }
                 )
             }
         }

@@ -3,7 +3,9 @@ package com.example.smarty
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,11 +33,13 @@ fun FridgeScreen(
     }
     var loading by remember(userId) { mutableStateOf(true) }
     var error by remember(userId) { mutableStateOf<String?>(null) }
-    var showForm by rememberSaveable { mutableStateOf(false) }
+
+    var showForm by remember { mutableStateOf(false) }
+    var selectedItem by remember { mutableStateOf<FridgeItem?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var formError by remember { mutableStateOf<String?>(null) }
     var deletingIds by remember { mutableStateOf(setOf<String>()) }
 
-    // Listen for changes and stop listening when this screen closes.
     DisposableEffect(collection) {
         val listener = collection
             .orderBy("expiryDate")
@@ -46,9 +50,11 @@ fun FridgeScreen(
                     error = exception.localizedMessage
                 } else {
                     error = null
-                    fridgeItems = snapshot?.documents.orEmpty().mapNotNull {
-                        it.toObject(FridgeItem::class.java)?.copy(id = it.id)
-                    }
+                    fridgeItems = snapshot?.documents.orEmpty()
+                        .mapNotNull { document ->
+                            document.toObject(FridgeItem::class.java)
+                                ?.copy(id = document.id)
+                        }
                 }
             }
 
@@ -78,19 +84,24 @@ fun FridgeScreen(
         }
 
         Text("Use what you have. Waste less.")
+        ReminderControls(userId = userId)
 
         Spacer(Modifier.height(16.dp))
 
         Button(
-            onClick = { showForm = true },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                selectedItem = null
+                formError = null
+                showForm = true
+            }
         ) {
             Text("+ Add item")
         }
 
-        error?.let {
+        error?.let { message ->
             Text(
-                text = it,
+                text = message,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
@@ -98,65 +109,90 @@ fun FridgeScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        if (loading) {
-            CircularProgressIndicator()
-        } else if (fridgeItems.isEmpty()) {
-            Text("Your fridge is empty. Add your first item!")
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(fridgeItems, key = { it.id }) { item ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(
-                                text = item.name,
-                                style = MaterialTheme.typography.titleMedium
-                            )
+        when {
+            loading -> CircularProgressIndicator()
 
-                            Text("${item.quantity} ${item.unit}")
-                            Text("Expiry date: ${item.expiryDate}")
+            fridgeItems.isEmpty() -> {
+                Text("Your fridge is empty. Add your first item!")
+            }
 
-                            val date = runCatching {
-                                LocalDate.parse(item.expiryDate)
-                            }.getOrNull()
-
-                            val today = LocalDate.now()
-
-                            when {
-                                date == null -> Unit
-
-                                date.isBefore(today) -> Text(
-                                    text = "Past the entered date",
-                                    color = MaterialTheme.colorScheme.error
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(fridgeItems, key = { it.id }) { item ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.titleMedium
                                 )
 
-                                !date.isAfter(today.plusDays(3)) -> Text(
-                                    text = "Use soon",
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                                Text("${item.quantity} ${item.unit}")
+                                Text("Expiry date: ${item.expiryDate}")
 
-                            TextButton(
-                                enabled = item.id !in deletingIds,
-                                onClick = {
-                                    error = null
-                                    deletingIds = deletingIds + item.id
+                                val date = runCatching {
+                                    LocalDate.parse(item.expiryDate)
+                                }.getOrNull()
 
-                                    collection.document(item.id).delete()
-                                        .addOnCompleteListener { task ->
-                                            deletingIds = deletingIds - item.id
+                                val today = LocalDate.now()
 
-                                            if (!task.isSuccessful) {
-                                                error = task.exception
-                                                    ?.localizedMessage
-                                                    ?: "Could not remove item."
-                                            }
-                                        }
+                                when {
+                                    date == null -> Unit
+
+                                    date.isBefore(today) -> Text(
+                                        text = "Past the entered date",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+
+                                    !date.isAfter(today.plusDays(3)) -> Text(
+                                        text = "Use soon",
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
-                            ) {
-                                Text("Remove")
+
+                                Row {
+                                    TextButton(
+                                        enabled = item.id !in deletingIds,
+                                        onClick = {
+                                            selectedItem = item
+                                            formError = null
+                                            showForm = true
+                                        }
+                                    ) {
+                                        Text("Edit")
+                                    }
+
+                                    TextButton(
+                                        enabled = item.id !in deletingIds,
+                                        onClick = {
+                                            error = null
+                                            deletingIds = deletingIds + item.id
+
+                                            collection.document(item.id)
+                                                .delete()
+                                                .addOnCompleteListener { task ->
+                                                    deletingIds =
+                                                        deletingIds - item.id
+
+                                                    if (!task.isSuccessful) {
+                                                        error = task.exception
+                                                            ?.localizedMessage
+                                                            ?: "Could not remove item."
+                                                    }
+                                                }
+                                        }
+                                    ) {
+                                        Text(
+                                            if (item.id in deletingIds) {
+                                                "Removing..."
+                                            } else {
+                                                "Remove"
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -166,58 +202,96 @@ fun FridgeScreen(
     }
 
     if (showForm) {
-        AddItemDialog(
-            saving = saving,
-            onDismiss = { showForm = false },
-            onAdd = { name, quantity, expiryDate ->
-                saving = true
-                error = null
+        key(selectedItem?.id) {
+            ItemFormDialog(
+                initialItem = selectedItem,
+                saving = saving,
+                saveError = formError,
+                onDismiss = { showForm = false },
+                onSave = { name, quantity, unit, expiryDate ->
+                    saving = true
+                    formError = null
 
-                val document = collection.document()
+                    val existingItem = selectedItem
 
-                val item = FridgeItem(
-                    id = document.id,
-                    name = name,
-                    quantity = quantity,
-                    unit = "item(s)",
-                    expiryDate = expiryDate
-                )
-
-                document.set(item)
-                    .addOnCompleteListener { task ->
-                        saving = false
-
-                        if (task.isSuccessful) {
-                            showForm = false
-                        } else {
-                            error = task.exception?.localizedMessage
-                                ?: "Could not save item."
-                            showForm = false
-                        }
+                    // Update an existing document or create a new one.
+                    val document = if (existingItem != null) {
+                        collection.document(existingItem.id)
+                    } else {
+                        collection.document()
                     }
-            }
-        )
+
+                    // Copy preserves fields such as barcode and image URL.
+                    val updatedItem = (existingItem ?: FridgeItem()).copy(
+                        id = document.id,
+                        name = name,
+                        quantity = quantity,
+                        unit = unit,
+                        expiryDate = expiryDate
+                    )
+
+                    document.set(updatedItem)
+                        .addOnCompleteListener { task ->
+                            saving = false
+
+                            if (task.isSuccessful) {
+                                showForm = false
+                                selectedItem = null
+                            } else {
+                                formError = task.exception?.localizedMessage
+                                    ?: "Could not save item. Try again."
+                            }
+                        }
+                }
+            )
+        }
     }
 }
 
 @Composable
-private fun AddItemDialog(
+private fun ItemFormDialog(
+    initialItem: FridgeItem?,
     saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, String) -> Unit
+    onSave: (String, Double, String, String) -> Unit
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var quantity by rememberSaveable { mutableStateOf("1") }
-    var expiryDate by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var name by rememberSaveable {
+        mutableStateOf(initialItem?.name.orEmpty())
+    }
+
+    var quantity by rememberSaveable {
+        mutableStateOf(initialItem?.quantity?.toString() ?: "1")
+    }
+
+    var unit by rememberSaveable {
+        mutableStateOf(initialItem?.unit ?: "item(s)")
+    }
+
+    var expiryDate by rememberSaveable {
+        mutableStateOf(initialItem?.expiryDate.orEmpty())
+    }
+
+    var validationError by remember {
+        mutableStateOf<String?>(null)
+    }
 
     AlertDialog(
         onDismissRequest = {
             if (!saving) onDismiss()
         },
-        title = { Text("Add fridge item") },
+        title = {
+            Text(
+                if (initialItem == null) {
+                    "Add fridge item"
+                } else {
+                    "Edit fridge item"
+                }
+            )
+        },
         text = {
             Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedTextField(
@@ -242,6 +316,15 @@ private fun AddItemDialog(
                 )
 
                 OutlinedTextField(
+                    value = unit,
+                    onValueChange = { unit = it },
+                    label = { Text("Unit: items, g, kg, mL...") },
+                    singleLine = true,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
                     value = expiryDate,
                     onValueChange = { expiryDate = it },
                     label = { Text("Expiry date: YYYY-MM-DD") },
@@ -250,9 +333,9 @@ private fun AddItemDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                error?.let {
+                (validationError ?: saveError)?.let { message ->
                     Text(
-                        text = it,
+                        text = message,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -262,7 +345,10 @@ private fun AddItemDialog(
             TextButton(
                 enabled = !saving,
                 onClick = {
-                    val amount = quantity.replace(',', '.').toDoubleOrNull()
+                    val amount = quantity
+                        .replace(',', '.')
+                        .toDoubleOrNull()
+
                     val dateText = expiryDate.trim()
 
                     val validDate =
@@ -271,23 +357,33 @@ private fun AddItemDialog(
                                     LocalDate.parse(dateText)
                                 }.isSuccess
 
-                    error = when {
-                        name.isBlank() -> "Enter an item name."
+                    validationError = when {
+                        name.isBlank() ->
+                            "Enter an item name."
 
-                        amount == null || !amount.isFinite() ||
-                                amount <= 0 -> "Enter a quantity greater than zero."
+                        amount == null || !amount.isFinite() || amount <= 0 ->
+                            "Enter a quantity greater than zero."
 
-                        !validDate -> "Enter a real date using YYYY-MM-DD."
+                        unit.isBlank() ->
+                            "Enter a unit."
+
+                        !validDate ->
+                            "Enter a real date using YYYY-MM-DD."
 
                         else -> null
                     }
 
-                    if (error == null && amount != null) {
-                        onAdd(name.trim(), amount, dateText)
+                    if (validationError == null && amount != null) {
+                        onSave(
+                            name.trim(),
+                            amount,
+                            unit.trim(),
+                            dateText
+                        )
                     }
                 }
             ) {
-                Text(if (saving) "Saving..." else "Add")
+                Text(if (saving) "Saving..." else "Save")
             }
         },
         dismissButton = {
