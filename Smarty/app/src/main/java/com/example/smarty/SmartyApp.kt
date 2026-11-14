@@ -19,6 +19,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
@@ -26,6 +28,17 @@ fun SmartyApp() {
     val auth = remember { FirebaseAuth.getInstance() }
     val context = LocalContext.current
     var user by remember { mutableStateOf(auth.currentUser) }
+    var verifiedUid by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(user?.uid) {
+        verifiedUid = null
+        val current = user
+        if (current != null && current.isEmailVerified) {
+            current.getIdToken(true).addOnSuccessListener {
+                if (auth.currentUser?.uid == current.uid) verifiedUid = current.uid
+            }
+        }
+    }
 
     DisposableEffect(auth) {
         val listener = FirebaseAuth.AuthStateListener {
@@ -47,6 +60,21 @@ fun SmartyApp() {
 
         if (currentUser == null) {
             AuthScreen(auth)
+        } else if (verifiedUid != currentUser.uid) {
+            key(currentUser.uid) {
+                VerifyEmailScreen(
+                    user = currentUser,
+                    onVerified = {
+                        if (auth.currentUser?.uid == currentUser.uid) {
+                            verifiedUid = currentUser.uid
+                        }
+                    },
+                    onLogout = {
+                        auth.signOut()
+                        disableExpiryReminders(context)
+                    }
+                )
+            }
         } else {
             key(currentUser.uid) {
                 SharedFridgeHome(
@@ -58,6 +86,57 @@ fun SmartyApp() {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun VerifyEmailScreen(user: FirebaseUser, onVerified: () -> Unit, onLogout: () -> Unit) {
+    var busy by remember { mutableStateOf(false) }
+    var cooldown by remember { mutableStateOf(0) }
+    var message by remember { mutableStateOf("Verify your email before opening your fridges.") }
+
+    LaunchedEffect(cooldown) {
+        if (cooldown > 0) {
+            delay(1000)
+            cooldown -= 1
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Verify your email", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(16.dp))
+        Text(user.email.orEmpty())
+        Text(message)
+        Spacer(Modifier.height(16.dp))
+        Button(enabled = !busy && cooldown == 0, onClick = {
+            busy = true
+            cooldown = 60
+            user.sendEmailVerification().addOnCompleteListener { task ->
+                busy = false
+                message = if (task.isSuccessful) "Email sent. Check your inbox and spam folder."
+                    else "Could not send the email. Please try again later."
+            }
+        }) { Text(if (cooldown > 0) "Send again in ${cooldown}s" else "Send verification email") }
+        Button(enabled = !busy, onClick = {
+            busy = true
+            user.reload().addOnCompleteListener { reload ->
+                if (!reload.isSuccessful || !user.isEmailVerified) {
+                    busy = false
+                    message = "Verification not confirmed. Open the email link, then try again."
+                } else {
+                    user.getIdToken(true).addOnCompleteListener { token ->
+                        busy = false
+                        if (token.isSuccessful) onVerified()
+                        else message = "Could not refresh your session. Try again or sign in again."
+                    }
+                }
+            }
+        }) { Text("I have verified my email") }
+        TextButton(enabled = !busy, onClick = onLogout) { Text("Sign out") }
     }
 }
 

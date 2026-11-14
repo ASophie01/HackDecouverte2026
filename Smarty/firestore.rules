@@ -1,13 +1,36 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
     function own(userId) { return signedIn() && request.auth.uid == userId; }
     function member(fridgeId) {
-      return signedIn() && exists(/databases/$(database)/documents/fridges/$(fridgeId)/members/$(request.auth.uid));
+      return signedIn() && exists(/databases/$(database)/documents/fridges/$(fridgeId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/fridges/$(fridgeId)/members/$(request.auth.uid)).data.get('role', 'editor') in ['editor','adder','viewer'];
     }
     function memberAfter(fridgeId) {
-      return signedIn() && getAfter(/databases/$(database)/documents/fridges/$(fridgeId)/members/$(request.auth.uid)).data.userId == request.auth.uid;
+      return signedIn() && getAfter(/databases/$(database)/documents/fridges/$(fridgeId)/members/$(request.auth.uid)).data.userId == request.auth.uid
+        && roleAfter(fridgeId) in ['editor','adder','viewer'];
+    }
+    function owner(fridgeId) {
+      return member(fridgeId)
+        && get(/databases/$(database)/documents/fridges/$(fridgeId)).data.ownerId == request.auth.uid;
+    }
+    // Legacy memberships without a role retain their original editor access.
+    // Ownership is authoritative on the fridge, never on the member document.
+    function roleAfter(fridgeId) {
+      return getAfter(/databases/$(database)/documents/fridges/$(fridgeId)/members/$(request.auth.uid)).data.get('role', 'editor');
+    }
+    function canAdd(fridgeId) {
+      return memberAfter(fridgeId)
+        && (getAfter(/databases/$(database)/documents/fridges/$(fridgeId)).data.ownerId == request.auth.uid
+          || roleAfter(fridgeId) in ['editor', 'adder']);
+    }
+    function canEdit(fridgeId) {
+      return memberAfter(fridgeId)
+        && (getAfter(/databases/$(database)/documents/fridges/$(fridgeId)).data.ownerId == request.auth.uid
+          || roleAfter(fridgeId) == 'editor');
     }
     function validItem(data, itemId) {
       return data.keys().hasOnly(['id','name','quantity','unit','category','expiryDate','barcode','imageUrl'])
@@ -58,19 +81,27 @@ service cloud.firestore {
         allow get: if own(userId) || member(fridgeId);
         allow list: if member(fridgeId);
         allow create: if own(userId)
-          && request.resource.data.keys().hasOnly(['userId','inviteCode'])
+          && request.resource.data.keys().hasOnly(['userId','inviteCode','role'])
           && request.resource.data.userId == userId
+          && request.resource.data.get('role', 'editor') == 'editor'
           && (getAfter(/databases/$(database)/documents/fridges/$(fridgeId)).data.ownerId == userId
             || get(/databases/$(database)/documents/fridgeInvites/$(request.resource.data.inviteCode)).data.fridgeId == fridgeId);
+        // Only the owner changes another member's role; identity stays fixed.
+        allow update: if owner(fridgeId)
+          && userId != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && request.resource.data.role in ['editor', 'adder', 'viewer', 'revoked'];
+        // Revoke with role=revoked, not delete: the old invite must not allow rejoining.
       }
       match /items/{itemId} {
         allow read: if member(fridgeId);
-        allow create, update: if memberAfter(fridgeId) && validItem(request.resource.data, itemId);
-        allow delete: if member(fridgeId);
+        allow create: if canAdd(fridgeId) && validItem(request.resource.data, itemId);
+        allow update: if canEdit(fridgeId) && validItem(request.resource.data, itemId);
+        allow delete: if canEdit(fridgeId);
       }
       match /cookedRecipes/{recipeId} {
         allow read: if member(fridgeId);
-        allow create: if member(fridgeId)
+        allow create: if canEdit(fridgeId)
           && request.resource.data.keys().hasOnly(['cookedBy','title','servings','cookedAt'])
           && request.resource.data.cookedBy == request.auth.uid
           && request.resource.data.title is string
