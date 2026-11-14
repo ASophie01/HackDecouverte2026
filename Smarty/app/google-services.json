@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "101435407976",
+    "project_id": "smarty-fc72b",
+    "storage_bucket": "smarty-fc72b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:101435407976:android:adc16c3582874bfa0d85dd",
+        "android_client_info": {
+          "package_name": "com.example.smarty"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYfiguK6O_lTabaZx340cqCTjV8BURY1M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
